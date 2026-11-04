@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.idea/
+
+# Data and outputs: never commit (see docs/DATA.md)
+*.gdb/
+*.aprx
+*.tif
+*.tfw
+*.aux.xml
+*.ovr
+*.xlsx
+*.xls
+*.db
+*.sqlite
+*.lcp
+*.shp
+*.dbf
+*.shx
+*.prj
+*.zip
+*.grib
+
+# Author-only review notes, not for publication
+REVIEW_NOTES.md

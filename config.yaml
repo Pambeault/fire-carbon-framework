@@ -1,0 +1,223 @@
+# =============================================================================
+# Fire–carbon framework: MASTER CONFIGURATION
+# =============================================================================
+# Every path, layer name and modelling assumption used by the pipeline is set
+# here. The scripts in src/fire_carbon/ contain no hard-coded paths or study
+# settings. They read everything from this file.
+#
+# The values below are the ones used for the Stone (Yunesit'in) study area in
+# the paper. If you apply the framework elsewhere, review EVERY section: many
+# values are specific to the region, the forest type or the study design
+# (see README.md, "Reproducing the process, not the exact results").
+#
+# Relative paths are resolved against `paths.root`, except for files under
+# `supporting:`, which are resolved against this repository's folder.
+# =============================================================================
+
+project:
+  name: "Stone fire-carbon (Tŝilhqot'in, BC)"
+  # Landscape (VRI) years modelled. The pipeline loops over these.
+  landscape_years: [2022]
+  # FlamMap/carbon-savings scenarios. These must match the CBP file names (see flammap.output_name).
+  scenarios: [low, high]
+
+# -----------------------------------------------------------------------------
+# Folders and executables
+# -----------------------------------------------------------------------------
+paths:
+  root: "C:/fire_carbon_run"                 # working folder for all inputs and outputs (CHANGE ME)
+  gdb: "gis/fire_carbon.gdb"                 # file geodatabase that holds the input layers
+  aprx: "gis/fire_carbon.aprx"               # ArcGIS Pro project that contains `gis.map`
+  raw_dir: "data/raw"                        # VRI attribute tables exported from the project
+  processed_dir: "data/processed"            # processed VRI tables (IDW-filled, with topography)
+  treatment_dir: "data/treatment"            # treatment-intersection tables (derived from your treatment polygons)
+  fvs_dir: "modelling/FVS"                   # one sub-folder per landscape year: modelling/FVS/<year>
+  carbonstock_dir: "modelling/FVS/Raster_for_carbonstock"
+  landscape_dir: "modelling/FlamMap/Rasters_for_landscape"   # one sub-folder per year
+  cbp_dir: "modelling/FlamMap/CBP_output"    # FlamMap MTT burn-probability rasters (manual step)
+  fofem_dir: "modelling/FOFEM"               # FOFEM batch I/O: modelling/FOFEM/<year>/io
+  fofem_ifs_dir: "modelling/FOFEM/IFS"       # FOFEM I/O for the prescribed (IFS) burns
+  emission_dir: "modelling/FOFEM/Raster_emission"
+  results_dir: "results"
+  temp_dir: "temp"
+
+executables:
+  # FVS BC variant executable. It is run with the FVS/<year> folder as its working directory.
+  fvs: "C:/FVSbin/FVSbc.exe"
+  # FOFEM 6.7 batch executable and its install folder (needed as working directory).
+  fofem: "C:/Program Files (x86)/FOFEM6.7/FOF_GUI.exe"
+  fofem_workdir: "C:/Program Files (x86)/FOFEM6.7"
+
+# Small files shipped with this repository (paths relative to the repo folder)
+supporting:
+  fuel_type_conversion: "data/supporting/fuel_type_conversion.csv"
+
+# -----------------------------------------------------------------------------
+# ArcGIS Pro project: map, layer and field names
+# -----------------------------------------------------------------------------
+gis:
+  map: "VRI approach"
+  crs_epsg: 3005                              # NAD83 / BC Albers
+  resolution_m: 80                            # raster cell size for every raster (must match FlamMap)
+  layers:
+    aoi: "AOI"
+    dem: "DEM"
+    vri: "VRI_{year}_AOI"                     # {year} is replaced by the landscape year
+    fuel_types: "VRI_Wildfire_Fire_Fuel_Types_AOI_{year}"   # BCWS fuel-type layer for that year
+    treatments: "WalkPoly_all_years_Dissolve" # treatment polygons. NOT distributed with this repository
+  fields:
+    polygon_id: "POLYGON_ID"
+    fuel_type: "FUEL_TYPE_CD"
+
+# -----------------------------------------------------------------------------
+# Step 2: VRI processing (fill empty polygons, add topography)
+# -----------------------------------------------------------------------------
+vri_processing:
+  idw_power: 2
+  idw_fields:
+    - VRI_LIVE_STEMS_PER_HA
+    - VRI_DEAD_STEMS_PER_HA
+    - PROJ_HEIGHT_1
+    - PROJ_AGE_1
+    - SITE_INDEX
+    - QUAD_DIAM_125
+  # Leading species assigned to polygons with no species, keyed on BCLCS_LEVEL_4
+  empty_polygon_species:
+    TC: FDI
+    TB: AT
+    HG: PLI
+    HE: PLI
+    TM: PLI
+    SL: PLI
+    ST: PLI
+
+# -----------------------------------------------------------------------------
+# Step 3–5: FVS (Forest Vegetation Simulator, BC variant)
+# -----------------------------------------------------------------------------
+fvs:
+  variant: "BC"
+  # Inventory year written to FVS_StandInit and to the InvYear keyword.
+  inventory_year: 2022
+  ecoregion: "KAM-IDFxh1/04"                  # BEC unit for the study area
+  stands_per_db: 500                          # stands per FVS input database (chunking)
+  breakpoint_dbh_cm: 12.5                     # small/large tree breakpoint
+  height_cv: 0.56                             # within-stand coefficient of variation of tree height
+  # Random seed for the synthetic tree lists. null = unseeded, as in the paper
+  # (each run produces slightly different tree lists). Set an integer for repeatable runs.
+  random_seed: null
+  # Tiered cap on synthetic trees per stand: [upper live-stems/ha bound, max trees]
+  max_trees_tiers: [[500, 150], [1000, 200], [2000, 350], [null, 500]]
+  num_cycles: 10
+  run_timeout_s: 900
+  # Year used for fuels, canopy and fire (landscape, FOFEM and FVS fire runs)
+  target_year: 2025
+  # Prescribed (IFS) burn simulated in treated stands, in the no-wildfire runs.
+  # SimFire fields: year, wind (km/h), moisture (1=extra dry..4=moist), temperature (C),
+  # mortality (0=off), [percent area = treated %], season (1=early spring)
+  prescribed_burn: {year: 2025, wind_kmh: 8, moisture_code: 4, temperature_c: 8, mortality: 0, season: 1}
+  # Severe wildfire simulated in every stand (FVS "fire" runs)
+  wildfire: {year: 2025, wind_kmh: 29, moisture_code: 1, temperature_c: 25, mortality: 1,
+             percent_area: 100, season: 3}
+  flame_adjust_treated: 0.3                   # FlameAdj multiplier applied to treated stands
+  # Stands for which FVS-FFE mortality crashes (SIGFPE). Mortality is disabled for these stands only.
+  mortality_skip_stands: ["95980946", "57699502", "57960514", "67348828", "63172458",
+                          "62726287", "96527046", "84619211", "5928034", "35729590"]
+  # Carbon (C) to CO2e conversion used in the FVS carbon reports
+  c_to_co2e: 3.667
+
+# -----------------------------------------------------------------------------
+# Step 6: FlamMap landscape rasters + fuel conversion
+# -----------------------------------------------------------------------------
+landscape:
+  # Which treated-fuel assumption to use when building the treated fuel raster
+  # (columns treated_low / treated_high in the fuel conversion table)
+  fuel_assumption: "high"
+
+# -----------------------------------------------------------------------------
+# FlamMap MTT (MANUAL STEP, run in the FlamMap 6 interface)
+# -----------------------------------------------------------------------------
+# The pipeline does not run FlamMap and does not build the landscape file.
+# In FlamMap, create the landscape (.lcp) by hand from the step-6 GeoTIFFs, run
+# MTT for each scenario and treatment flag, and save the conditional burn
+# probability rasters to paths.cbp_dir using `output_name`.
+# The values below record what was used in the paper (see docs/FLAMMAP.md).
+# The scripts only read sim_time_min and output_name; the rest is documentation.
+# They are meant to be varied in a sensitivity analysis.
+flammap:
+  version: "6.2.10.0"
+  sim_time_min: 2400
+  output_name: "{year}_{scenario}_{sim_time}_{tflag}.tif"   # tflag 0 = baseline, 1 = treated
+  scenarios:
+    low:  {wind_speed_kmh_10m: 23, wind_direction_deg: 320, fuel_moisture: "very dry",
+           treated_fuel_assumption: "moderate"}
+    high: {wind_speed_kmh_10m: 29, wind_direction_deg: 170, fuel_moisture: "very dry",
+           treated_fuel_assumption: "moderate + burnable"}
+  # Fixed fuel moisture (%) for every fuel model: 1-h, 10-h, 100-h, live herb, live woody
+  fuel_moisture_pct: {one_hr: 3, ten_hr: 4, hundred_hr: 5, live_herb: 30, live_woody: 60}
+  foliar_moisture_pct: 100
+  crown_fire_method: "Scott/Reinhardt (2001)"
+  ignitions: {type: random, count: 1500, reused_between_runs: true}   # saved once, then "from fire list file"
+  mtt: {resolution_m: 80, min_travel_path_interval: 500, spot_probability: 0,
+        spotting_delay: 0, lateral_search_depth: 6, vertical_search_depth: 4}
+
+# -----------------------------------------------------------------------------
+# Step 7–8.1: FOFEM 6.7 (fire emissions)
+# -----------------------------------------------------------------------------
+fofem:
+  batch_size: 1000
+  # Wildfire consumption (FVS fuels at target_year → FOFEM batch input)
+  wildfire:
+    fine_fuel_split: {one_hr: 0.11, ten_hr: 0.23, hundred_hr: 0.66}   # split of FVS Surface_lt76
+    moisture_10hr: 6
+    moisture_1000hr: 10
+    pct_rotten_1000hr: 30
+    weight_distribution_1000hr: "Even"
+    duff_moisture: 20
+    duff_bulk_density_kg_m3: 50
+    crown_foliage_fraction: 0.8               # share of crown biomass (from CBD) that is foliage
+    crown_branch_fraction: 0.2                # share that is branch
+    region: "InteriorWest"
+    cover_group: "GG"
+    season: "Summer"
+    fuel_category: "Natural"
+    soil_family: "Loamy-Skeletal"
+    soil_moisture: 5
+  # Prescribed (IFS) burn consumption, spring, no crown involvement
+  prescribed:
+    fine_fuel_split: {one_hr: 0.11, ten_hr: 0.23, hundred_hr: 0.66}
+    moisture_10hr: 22
+    moisture_1000hr: 40
+    pct_rotten_1000hr: 30
+    weight_distribution_1000hr: "Even"
+    duff_load_divisor: 100                    # IFS duff load = FVS Surface_Duff / 100, as in the paper
+    duff_moisture: 130
+    duff_bulk_density_kg_m3: 50
+    region: "InteriorWest"
+    cover_group: "GG"
+    season: "Spring"
+    fuel_category: "Natural"
+    soil_family: "NA"
+    soil_moisture: 25
+
+# -----------------------------------------------------------------------------
+# Emissions → CO2e (REM Equation 6.3; AR5 100-yr GWP)
+# -----------------------------------------------------------------------------
+emissions:
+  gwp: {CH4: 28, CO: 1.8, NMVOC: 5, N2O: 265, PM25: 9}
+  nmvoc_ef: 11.9                              # NMVOC emission factor, applied as ef / 1000 per ton consumed
+  n2o_ef: 0.16                                # N2O emission factor, applied as ef / 1e6 per ton consumed
+
+# -----------------------------------------------------------------------------
+# Step 5.5 + 10: carbon stock rasters and carbon savings
+# -----------------------------------------------------------------------------
+carbon_stock:
+  c_to_co2e: 3.6667                           # NOTE: the FVS reports use 3.667 (fvs.c_to_co2e)
+  fire_year: 2025
+  skip_year: 2022                             # year excluded when rasterising FVS reports
+  apply_trajectory_change: true
+  # Post-fire trajectory change (delayed regeneration)
+  trajectory_scenarios:
+    tjlow:  {tau: 0.4, alpha: 0.7}
+    tjhigh: {tau: 0.5, alpha: 0.6}
+  # CBP scenario → trajectory scenario paired with it in carbon savings
+  scenario_tj_pair: {low: tjlow, high: tjhigh}

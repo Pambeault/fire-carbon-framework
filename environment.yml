@@ -1,0 +1,17 @@
+# The framework runs in the ArcGIS Pro Python environment (arcpy needs a licensed
+# ArcGIS Pro install, so it cannot be installed from conda-forge).
+#
+# 1. In ArcGIS Pro: Settings > Package Manager > Environment Manager > clone "arcgispro-py3",
+#    or from the ArcGIS Pro command prompt:
+#        conda create --name fire-carbon --clone arcgispro-py3
+#        activate fire-carbon
+# 2. Every package below is already included in arcgispro-py3 for ArcGIS Pro 3.7.
+#    This file records the versions the pipeline was tested with.
+name: fire-carbon
+dependencies:
+  - python=3.13
+  - pandas=3.0        # tested 3.0.0
+  - numpy=2.3         # tested 2.3.5
+  - openpyxl=3.1      # tested 3.1.5
+  - pyyaml=6.0        # tested 6.0.2
+  # arcpy 3.7 (ArcGIS Pro 3.7, Spatial Analyst extension)
