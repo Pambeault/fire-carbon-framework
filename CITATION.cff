@@ -10,7 +10,7 @@ authors:
     # PLACEHOLDER: orcid: "https://orcid.org/0000-0000-0000-0000"
   # PLACEHOLDER: add co-authors here
 # PLACEHOLDER: doi: 10.5281/zenodo.XXXXXXX        # filled in after the Zenodo release
-# PLACEHOLDER: repository-code: "https://github.com/<user>/fire-carbon-framework"
+repository-code: "https://github.com/Pambeault/fire-carbon-framework"
 date-released: "2026-11-03"          # PLACEHOLDER: update on release
 preferred-citation:
   type: article
