@@ -1,10 +1,14 @@
 # Fire–carbon framework
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23984891.svg)](https://doi.org/10.5281/zenodo.23984891)
-
 Code for the framework described in:
 
-> **[PLACEHOLDER: AUTHORS] ([PLACEHOLDER: YEAR]). [PLACEHOLDER: PAPER TITLE]. *[PLACEHOLDER: JOURNAL]*. https://doi.org/[PLACEHOLDER: PAPER DOI]** *(in review)*
+> **[PAPER AUTHORS]: Philippe Ambeault, William Nikolakis, Brad Seely, Mathieu Bourbonnais**
+> **[YEAR]: 2026**
+> **[PAPER TITLE]: Proactive fire treatment as carbon investment: A probabilistic carbon accounting framework for wildfire mitigation**
+> **[JOURNAL]: Journal of Environmental Management**
+> **[DOI]: PLACEHOLDER** *(in review)*
+
+**[AUTHOR of the Code]: Philippe Ambeault**
 
 The framework estimates how much carbon is saved when fuel treatments (here,
 Indigenous-led cultural / prescribed burning) reduce the probability and severity
@@ -127,8 +131,9 @@ docs/FLAMMAP.md             the manual FlamMap MTT step and the settings used
 
 The paper's final result rasters and summary tables (burn-probability ratios,
 emission rasters, carbon-stock rasters, carbon savings) are archived on Zenodo
-under CC-BY 4.0: **https://doi.org/[PLACEHOLDER: ZENODO DATA DOI]**. They contain no
-treatment polygons.
+under CC-BY 4.0: **https://doi.org/10.5281/zenodo.23985361**. They contain no
+treatment polygons. Access is restricted: request it on the Zenodo record.
+
 
 ## Known issues and notes for reviewers
 
