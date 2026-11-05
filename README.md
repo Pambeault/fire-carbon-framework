@@ -1,5 +1,7 @@
 # Fire–carbon framework
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23984891.svg)](https://doi.org/10.5281/zenodo.23984891)
+
 Code for the framework described in:
 
 > **[PLACEHOLDER: AUTHORS] ([PLACEHOLDER: YEAR]). [PLACEHOLDER: PAPER TITLE]. *[PLACEHOLDER: JOURNAL]*. https://doi.org/[PLACEHOLDER: PAPER DOI]** *(in review)*
@@ -142,7 +144,10 @@ documented so that users can judge them, not silently "fixed":
 
 If you use this code, please cite the paper above and the software:
 
-> [PLACEHOLDER: AUTHORS] ([PLACEHOLDER: YEAR]). *Fire–carbon framework* (version 1.0.0) [Computer software]. Zenodo. https://doi.org/[PLACEHOLDER: ZENODO CODE DOI]
+> Ambeault, P. (2026). *Fire–carbon framework* [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.23984891
+
+This DOI always resolves to the latest version. Each release also has its own
+DOI, listed on the Zenodo page.
 
 A machine-readable citation is in [CITATION.cff](CITATION.cff).
 
