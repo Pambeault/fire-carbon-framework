@@ -155,7 +155,8 @@ def main(cfg, year):
     CARBON_STOCK_DIR = Path(cfg.path("carbonstock_dir"))
     VARIANT_TJ_PAIR  = {k: f"_{v}" for k, v in cfg["carbon_stock"]["scenario_tj_pair"].items()}
 
-    # 0. Directories
+    # 0. Directories (re-runs replace the earlier result rasters)
+    arcpy.env.overwriteOutput = True
     cbp_dir      = Path(cfg.path("cbp_dir"))
     emission_dir = Path(cfg.path("emission_dir"))
     result_dir   = Path(cfg.path("results_dir"))
@@ -233,12 +234,27 @@ def main(cfg, year):
         sum_emi = np.sum(arr_emi)
         print(f"  Avoided emissions total: {sum_emi:.2f}")
 
+        # Traceability: wildfire emissions and phi, over the same pixels as cs_fire
+        # (cells where cs_fire is NoData, e.g. CBP_baseline = 0, are left out).
+        # Emission rasters are Mg CO2e per pixel, so the sums are Mg CO2e.
+        def _masked(ras):
+            return arcpy.RasterToNumPyArray(ras + 0 * cs_fire, nodata_to_value=np.nan)
+
+        sum_w_base = float(np.nansum(_masked(e_0)))
+        sum_w_proj = float(np.nansum(_masked(e_1)))
+        mean_phi   = float(np.nanmean(_masked(phi_filter)))
+        print(f"  W_baseline: {sum_w_base:.2f} | W_project: {sum_w_proj:.2f} | "
+              f"mean phi: {mean_phi:.4f}")
+
         emission_results.append({
             "file"                       : fname,
             "variant"                    : variant,
             "year"                       : year,
             "resolution"                 : res,
             "total_avoided_emissions"    : sum_emi,
+            "sum_W_baseline"             : sum_w_base,      # wildfire emissions, baseline (Mg CO2e)
+            "sum_W_project"              : sum_w_proj,      # wildfire emissions, project (Mg CO2e)
+            "mean_phi"                   : mean_phi,        # pixel mean of phi (clamped 0-1)
             "avg_fire_size_baseline_ha"  : avg_fire_size_baseline,
             "avg_fire_size_treatment_ha" : avg_fire_size_treatment,
         })
@@ -282,16 +298,18 @@ def main(cfg, year):
                 # then mask to pixels where cs_carbon is valid.
                 # This ensures component sums use the identical pixel set
                 # as total_carbon_stock_impact, so they recombine correctly.
+                # Carbon rasters are t CO2e per ha (raster_for_carbonstock.py), so the
+                # pixel sums are multiplied by pixel_area_ha to give totals in Mg CO2e.
                 arr_carbon = arcpy.RasterToNumPyArray(cs_carbon, nodata_to_value=np.nan)
                 valid_mask = np.isfinite(arr_carbon)
-                sum_carbon = float(np.nansum(arr_carbon))
+                sum_carbon = float(np.nansum(arr_carbon)) * pixel_area_ha
                 print(f"    [{tj_label}] carbon stock impact: {sum_carbon:.2f}")
 
                 comp_sums = {}
                 for key, raster in components.items():
                     arr = arcpy.RasterToNumPyArray(raster, nodata_to_value=np.nan)
                     arr[~valid_mask] = np.nan
-                    comp_sums[key] = float(np.nansum(arr))
+                    comp_sums[key] = float(np.nansum(arr)) * pixel_area_ha
 
                 carbonstock_rows.append({
                     "cbp_file"                  : fname,

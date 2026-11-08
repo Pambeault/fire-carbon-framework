@@ -56,7 +56,11 @@ def co2eq(df, ecfg):
          + (df["COF"]  + df["COS"])/2000  * GWP_CO
          + (df["PM25F"] + df["PM25S"])/2000 * GWP_PM25)
         + (df["FlaCon"] + df["SmoCon"]) * GWP_NMVOC * (ecfg["nmvoc_ef"] / 1000)
-        + (df["FlaCon"] + df["SmoCon"]) * GWP_N2O   * (ecfg["n2o_ef"] / 1_000_000)
+        # N2O emission factor 0.16 g N2O per kg fuel consumed (Akagi et al., 2011,
+        # Atmos. Chem. Phys. 11, 4039-4072, doi:10.5194/acp-11-4039-2011).
+        # FlaCon + SmoCon are tons/acre, and g/kg = kg/t, so EF / 1000 gives tons N2O/acre.
+        # (REM Eq. 6.3 writes 0.16/10^6 for fuel mass in kg.)
+        + (df["FlaCon"] + df["SmoCon"]) * GWP_N2O   * (ecfg["n2o_ef"] / 1000)
     )
     return df
 
@@ -73,6 +77,13 @@ def build_fofem_input(df, p):
     since IFS does not burn trees.
     Surface fuel columns pulled from FVS_Fuels_Metric.
     """
+    # FVS_Fuels_Metric surface loads are in Mg/ha, but FOFEM expects tons/acre.
+    # Convert them here; crown fuels are converted separately where needed.
+    MGHA_TO_TONS_ACRE = 0.40468564 / 0.90718474   # 1 Mg/ha = 0.4461 short tons/acre
+    surface_cols = ["Surface_Litter", "Surface_Duff", "Surface_lt76",
+                    "Surface_ge76", "Surface_Herb", "Surface_Shrub"]
+    df = df.copy()
+    df[surface_cols] = df[surface_cols] * MGHA_TO_TONS_ACRE
     out = pd.DataFrame()
     out["Plot Id"]   = df["Stand_year"]
     out["Litter"]    = round(df["Surface_Litter"], 2)
@@ -84,10 +95,14 @@ def build_fofem_input(df, p):
     out["1000 Hour Moisture"]              = p["moisture_1000hr"]
     out["1000 Hour Percent Rotten"]        = str(p["pct_rotten_1000hr"])
     out["1000 Hour Weight Distribution"]   = p["weight_distribution_1000hr"]
-    out["Duff"]          = df["Surface_Duff"]/p["duff_load_divisor"]   # config fofem.prescribed.duff_load_divisor
+    # Cultural burns as observed do not consume duff, so the duff load is set to
+    # FOFEM's minimum (0.10 t/ac) for every stand instead of the FVS load.
+    # The depth is derived from that same load so the two stay consistent.
+    duff_load = p["duff_load_tons_acre"]
+    out["Duff"]          = duff_load
     out["Duff Moisture"] = p["duff_moisture"]
     out["Duff Depth"]    = round(
-        df["Surface_Duff"] * 907.185 / 4046.86 / p["duff_bulk_density_kg_m3"] * 39.37, 2
+        duff_load * 907.185 / 4046.86 / p["duff_bulk_density_kg_m3"] * 39.37, 2
     )
     out["Herbaceous"] = round(df["Surface_Herb"], 2)
     out["Shrub"]      = round(df["Surface_Shrub"], 2)
@@ -333,8 +348,7 @@ def main(cfg, landscape_year):
     df_result["E_IFS_MgCO2e"] = (
             df_result["co2eq"]
             * TONS_ACRE_TO_MG_HA  # tons/acre -> Mg/ha
-            * df_result["POLY_HA"]  # Mg/ha -> Mg per polygon
-            * df_result["treated_fraction"]  # scale to treated fraction only
+            * df_result["INTERSECT_HA"]  # Mg/ha -> Mg over the treated area of the polygon
     )
 
     total_eifs = df_result["E_IFS_MgCO2e"].sum()

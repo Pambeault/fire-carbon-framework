@@ -23,6 +23,13 @@ def batch_consumed(df, w):
     # # 2.0 Generate DF for fofem input
     # # ------------------------------------------------------------------
     # Go one variable at a time
+    # FVS_Fuels_Metric surface loads are in Mg/ha, but FOFEM expects tons/acre.
+    # Convert them here; crown fuels are converted separately where needed.
+    MGHA_TO_TONS_ACRE = 0.40468564 / 0.90718474   # 1 Mg/ha = 0.4461 short tons/acre
+    surface_cols = ["Surface_Litter", "Surface_Duff", "Surface_lt76",
+                    "Surface_ge76", "Surface_Herb", "Surface_Shrub"]
+    df = df.copy()
+    df[surface_cols] = df[surface_cols] * MGHA_TO_TONS_ACRE
     df_batch_consumed = pd.DataFrame()
     df_batch_consumed['Plot Id'] = df['Stand_year']     # No blank spaces
     df_batch_consumed['Litter'] = round(df['Surface_Litter'], 2)          # (T/ac)
@@ -47,10 +54,12 @@ def batch_consumed(df, w):
         (df["Stratum_1_Nom_Ht"] + df["Stratum_2_Nom_Ht"]) / 2,
         df["Stratum_1_Nom_Ht"])
     crown_total = df['Canopy_Density'] * abs(height-df['Canopy_Ht']) *4046.86 /907.2 # Crown_total was partitionned into foliage (80%) and branches (20%) as FOFEM does
-    # crown_total = crown_total.fillna(0).clip(upper=15)                # Upper bound consistent with FCCS and FOFEM defaults were applied to avoid unrealistically high crown biomass in dense stands
+    # Stands with no live trees have no StrClass row, so height (and crown_total) is NaN.
+    # FOFEM rejects a blank crown foliage, so these stands get 0 crown fuels.
+    crown_total = crown_total.fillna(0)
     df_batch_consumed['Crown Foliage'] = round(crown_total *w['crown_foliage_fraction'], 2) # (T/ac) -> 80% of total (derived from CBD)
     df_batch_consumed['Crown Branch'] = round(crown_total *w['crown_branch_fraction'], 2) # (T/ac) -> 20% of total (derived from CBD)
-    df_batch_consumed['Percent of Crown Burn'] = round(df['PTorch_Sev'], 0)           # Range 1-100%
+    df_batch_consumed['Percent of Crown Burn'] = round(df['PTorch_Sev'] * 100, 0)     # PTorch_Sev is a 0-1 probability; FOFEM expects 0-100 %
     df_batch_consumed['Region'] = w['region']                          # “InteriorWest”, “PacificWest”, “NorthEast”, “SouthEast”
     df_batch_consumed['Cover Group'] = w['cover_group']                    # Grass -> GG Used in the Chilcotin as the main driver of fire/ Shrub -> SG / Shrub-Chaparral -> SGC / Sagebrush -> SB / Ponderosa pine -> PN / Pocosin -> PC / Balsam, black, red, white spruce -> BBS / Red, jack pine -> RJP / White pine hemlock -> WPH
     df_batch_consumed['Season'] = w['season']                        # “Spring”, “Summer”, “Fall”, “Winter”
@@ -63,8 +72,12 @@ def batch_consumed(df, w):
 def collect_batches_for_f(io_root, f, switch_treatment):
     f_dir = io_root / str(f)
 
-    # FIXED: simple, robust glob
-    batch_files = sorted(f_dir.glob("*/batch_*.csv"))
+    # Only this flag's batches: batch_{f}_{j}_{switch_treatment}.csv
+    # (the old "*/batch_*.csv" also picked up the other flag's batches)
+    # "-fix" batches (from rerun_rejected) are read last, so a regular batch wins
+    # if a stand appears in both.
+    batch_files = sorted(f_dir.glob(f"*/batch_{f}_*_{switch_treatment}.csv"),
+                         key=lambda p: ("-fix" in p.name, str(p)))
 
     if not batch_files:
         print(f"[WARN] No batch files found for f={f}")
@@ -84,6 +97,7 @@ def collect_batches_for_f(io_root, f, switch_treatment):
         return None
 
     master_df = pd.concat(dfs, ignore_index=True)
+    master_df = master_df.drop_duplicates(subset="Std", keep="first")
 
     out_path = f_dir / f"master_{f}_{switch_treatment}.csv"
     master_df.to_csv(out_path, index=False)
@@ -181,6 +195,70 @@ def run_fofem_batches(
             BatchPath = batch_dir / f"batch_{f}_{j}_{switch_treatment}.csv"
             df_batch_df.to_csv(BatchPath, sep=",", index=False)
             print(f"[OK] wrote {BatchPath}")
+
+def rerun_rejected(IODIR, switch_treatment,
+                   fofem_exe,
+                   fofem_workdir):
+    """
+    Re-run only the stands FOFEM rejected for a missing crown foliage value
+    (stands with no live trees). Their saved one-row inputs are re-used with
+    crown foliage and crown branch set to 0, so FOFEM does not need to run
+    again for every stand.
+
+    Outputs go to batch_{f}_{j}-fix_{flag}.csv next to the regular batches;
+    collect_batches_for_f picks them up. Re-collect the masters afterwards.
+    """
+    IODIR = Path(IODIR)
+    CROWN_FOLIAGE, CROWN_BRANCH, CROWN_BURN = 15, 16, 17   # 0-based columns of the input row
+
+    err_files = sorted(IODIR.glob(f"*/*/err_*_{switch_treatment}.txt"))
+    fixed, failed = 0, []
+    by_dir = {}
+    for err in err_files:
+        if "Crown Foliage value is missing" not in err.read_text(errors="ignore"):
+            continue
+        in_path = err.with_name(err.name.replace("err_", "in_", 1)).with_suffix(".csv")
+        if not in_path.exists():
+            failed.append(err.name)
+            continue
+
+        row = pd.read_csv(in_path, header=None)
+        row[CROWN_FOLIAGE] = row[CROWN_FOLIAGE].fillna(0)
+        row[CROWN_BRANCH]  = row[CROWN_BRANCH].fillna(0)
+        row[CROWN_BURN]    = row[CROWN_BURN].fillna(0)
+
+        stem = in_path.stem + "_fix"
+        fix_in  = in_path.with_name(stem + ".csv")
+        fix_out = in_path.with_name(stem.replace("in_", "out_", 1) + ".txt")
+        fix_run = in_path.with_name(stem.replace("in_", "run_", 1) + ".txt")
+        fix_err = in_path.with_name(stem.replace("in_", "err_", 1) + ".txt")
+        row.to_csv(fix_in, sep=",", index=False, header=False)
+
+        subprocess.run([str(fofem_exe), "C", str(fix_in), str(fix_out),
+                        str(fix_run), str(fix_err), "H"],
+                       cwd=str(fofem_workdir), capture_output=True, text=True)
+
+        if not fix_out.exists():
+            failed.append(err.name)
+            continue
+        df_temp = pd.read_csv(fix_out, sep=",", engine="python")
+        if len(df_temp) < 2:
+            failed.append(err.name)
+            continue
+        by_dir.setdefault(in_path.parent, []).append(df_temp.iloc[[1]])
+        fixed += 1
+
+    for batch_dir, rows in by_dir.items():
+        f, j = batch_dir.parent.name, batch_dir.name
+        out = batch_dir / f"batch_{f}_{j}-fix_{switch_treatment}.csv"
+        pd.concat(rows, ignore_index=True).to_csv(out, sep=",", index=False)
+        print(f"[OK] wrote {out} ({len(rows)} rows)")
+
+    print(f"[FIX] flag {switch_treatment}: {fixed} rejected stands re-run, {len(failed)} still failing")
+    if failed:
+        print("      still failing:", failed[:10])
+    return fixed, failed
+
 
 def main(cfg, year, switch_treatment):
     """

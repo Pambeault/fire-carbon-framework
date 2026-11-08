@@ -25,3 +25,6 @@ __pycache__/
 
 # Author-only review notes, not for publication
 REVIEW_NOTES.md
+
+# Author-only audit notes
+UNIT_AUDIT.md

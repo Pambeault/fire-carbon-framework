@@ -149,7 +149,7 @@ def fvs_standinit(df_vri, fcfg):
     df_stand_init['PV_REF_CODE'] = np.nan                   # Not required
     df_stand_init['AGE'] = np.nan # OLD = df_vri['PROJ_AGE_1'] * df_vri['SPECIES_PCT_1']/(df_vri['SPECIES_PCT_1'] + df_vri['SPECIES_PCT_2']) + df_vri['PROJ_AGE_2'] * df_vri['SPECIES_PCT_2']/(df_vri['SPECIES_PCT_1'] + df_vri['SPECIES_PCT_2'])
     df_stand_init['ASPECT'] = df_vri['aspect'].clip(lower=0, upper = 360)                     # !!!Need to create a column here['plot_aspect']     # UNITS = degrees
-    df_stand_init['SLOPE'] = df_vri['slope']            # UNITS = Percent
+    df_stand_init['SLOPE'] = np.tan(np.radians(df_vri['slope'])) * 100   # VRI_processing gives degrees; FVS expects percent
     df_stand_init['ELEVATION'] = df_vri['elev']           # Not required if 'ELEVFT' is entered
     df_stand_init['ELEVFT'] = np.nan
     df_stand_init['BASAL_AREA_FACTOR'] = -1   # UNITS 1/area in hectare - for large tree plot

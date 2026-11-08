@@ -111,17 +111,26 @@ fvs:
   run_timeout_s: 900
   # Year used for fuels, canopy and fire (landscape, FOFEM and FVS fire runs)
   target_year: 2025
-  # Prescribed (IFS) burn simulated in treated stands, in the no-wildfire runs.
+  # Prescribed (IFS) burn simulated in treated stands, in both the no-wildfire and the wildfire runs.
+  # It is set one year before the wildfire because FFE simulates only one fire per year;
+  # the target_year reports are then post-treatment.
   # SimFire fields: year, wind (km/h), moisture (1=extra dry..4=moist), temperature (C),
-  # mortality (0=off), [percent area = treated %], season (1=early spring)
-  prescribed_burn: {year: 2025, wind_kmh: 8, moisture_code: 4, temperature_c: 8, mortality: 0, season: 1}
+  # mortality (0=off), [percent area = treated %], season (1=early spring).
+  # flame_adjust: FlameAdj multiplier on the prescribed burn's flame length.
+  prescribed_burn: {year: 2024, wind_kmh: 8, moisture_code: 4, temperature_c: 8, mortality: 0, season: 1,
+                    flame_adjust: 0.3}
   # Severe wildfire simulated in every stand (FVS "fire" runs)
   wildfire: {year: 2025, wind_kmh: 29, moisture_code: 1, temperature_c: 25, mortality: 1,
              percent_area: 100, season: 3}
-  flame_adjust_treated: 0.3                   # FlameAdj multiplier applied to treated stands
+  # Fuel model used by the FVS wildfire: "landscape" = each stand's FlamMap fuel model
+  # (majority of its pixels in the step-6 fuel model raster, applied with FUELMODL);
+  # "ffe" = FFE's own selection, which falls back to fuel model 8 for BC habitat types.
+  wildfire_fuel_model: "landscape"
   # Stands for which FVS-FFE mortality crashes (SIGFPE). Mortality is disabled for these stands only.
   mortality_skip_stands: ["95980946", "57699502", "57960514", "67348828", "63172458",
-                          "62726287", "96527046", "84619211", "5928034", "35729590"]
+                          "62726287", "96527046", "84619211", "5928034", "35729590",
+                          "47289952", "39466081", "56994525", "45023569", "82968417",
+                          "61677499"]
   # Carbon (C) to CO2e conversion used in the FVS carbon reports
   c_to_co2e: 3.667
 
@@ -189,7 +198,7 @@ fofem:
     moisture_1000hr: 40
     pct_rotten_1000hr: 30
     weight_distribution_1000hr: "Even"
-    duff_load_divisor: 100                    # IFS duff load = FVS Surface_Duff / 100, as in the paper
+    duff_load_tons_acre: 0.10                 # cultural burns do not consume duff: FOFEM minimum load
     duff_moisture: 130
     duff_bulk_density_kg_m3: 50
     region: "InteriorWest"
@@ -205,7 +214,7 @@ fofem:
 emissions:
   gwp: {CH4: 28, CO: 1.8, NMVOC: 5, N2O: 265, PM25: 9}
   nmvoc_ef: 11.9                              # NMVOC emission factor, applied as ef / 1000 per ton consumed
-  n2o_ef: 0.16                                # N2O emission factor, applied as ef / 1e6 per ton consumed
+  n2o_ef: 0.16                                # N2O emission factor, g/kg (Akagi et al., 2011); applied as ef / 1000 per ton consumed
 
 # -----------------------------------------------------------------------------
 # Step 5.5 + 10: carbon stock rasters and carbon savings

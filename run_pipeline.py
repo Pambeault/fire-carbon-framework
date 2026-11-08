@@ -9,7 +9,7 @@ List the steps:
 Run one step for one landscape year:
     python run_pipeline.py --steps vri_processing --years 2022
 Run everything up to the FlamMap landscape rasters:
-    python run_pipeline.py --steps treatment export_vri vri_processing vri_to_fvs fvs_run fvs_fire_run fvs_read fvs_fire_read landscape
+    python run_pipeline.py --steps treatment export_vri vri_processing vri_to_fvs fvs_run landscape_fuel fvs_fire_run fvs_read fvs_fire_read landscape
 
 FlamMap MTT is a MANUAL step between `landscape` and `carbon_stock`
 (see docs/FLAMMAP.md). Several steps take hours (noted below). Each step only
@@ -53,6 +53,11 @@ def step_fvs_run(cfg, year):
     from fire_carbon import FVS_run
     for t in TREATMENT_FLAGS:
         FVS_run.main(cfg, year, t)
+
+
+def step_landscape_fuel(cfg, year):
+    from fire_carbon import raster_for_landscape
+    raster_for_landscape.fuel_model_rasters(cfg, year)
 
 
 def step_fvs_fire_run(cfg, year):
@@ -112,6 +117,7 @@ STEPS = [
     ("vri_processing", step_vri_processing, "2   Fill empty VRI polygons (IDW), add elevation/slope/aspect/x/y"),
     ("vri_to_fvs",     step_vri_to_fvs,     "3   Build FVS input databases (synthetic tree lists), ~1 h"),
     ("fvs_run",        step_fvs_run,        "4   FVS growth runs, no wildfire (+ prescribed burn if treated), ~3 h per flag"),
+    ("landscape_fuel", step_landscape_fuel, "4.0 Fuel model rasters only (needed by fvs_fire_run with fvs.wildfire_fuel_model: landscape)"),
     ("fvs_fire_run",   step_fvs_fire_run,   "4.1 FVS runs with a severe wildfire"),
     ("fvs_read",       step_fvs_read,       "5   Read FVS outputs: carbon, potfire, structure reports"),
     ("fvs_fire_read",  step_fvs_fire_read,  "5.1 Read FVS wildfire outputs: carbon reports"),

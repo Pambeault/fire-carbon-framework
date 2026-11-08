@@ -92,7 +92,8 @@ def main(cfg, year, switch_treatment):
 
     # ------------------------------------------------------------------
     # 4. Total carbon stock per stand per year (all years retained)
-    #    Units: Total_Stand_Carbon (MgC/ha) x POLYGON_AREA (ha) x 3.667 = Mg CO2e
+    #    Total_Stand_Carbon stays in Mg C/ha (used by raster_for_carbonstock.py).
+    #    New column Total_Carbon = Total_Stand_Carbon x POLYGON_AREA x 3.667 = Mg CO2e per stand.
     # ------------------------------------------------------------------
 
 

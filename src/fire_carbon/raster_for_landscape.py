@@ -390,6 +390,20 @@ def stand_char_tiff(m, vri_layer_name, in_folder, out_folder, resolution, target
 
 
 
+def fuel_model_rasters(cfg, year):
+    """Write only the topography and fuel model rasters (needed by fvs_fire_run when
+    fvs.wildfire_fuel_model = "landscape"; they do not depend on FVS outputs)."""
+    out_folder = cfg.path("landscape_dir", year=year)
+    os.makedirs(out_folder, exist_ok=True)
+    arcpy.env.workspace = cfg.path("gdb")
+    arcpy.env.overwriteOutput = True
+    arcpy.CheckOutExtension("Spatial")
+    m = cfg.open_map()
+    topo_tiffs(m, cfg.layer("dem"), cfg.layer("aoi"), out_folder, cfg.resolution, cfg.spatial_reference())
+    fuel_model_tiff(m, cfg.layer("fuel_types", year), cfg.layer("treatments"), out_folder, cfg.resolution,
+                    cfg["landscape"]["fuel_assumption"], cfg.supporting("fuel_type_conversion"))
+
+
 def main(cfg, year):
     """Write FlamMap landscape rasters for *year* to paths.landscape_dir/<year>."""
     resolution = cfg.resolution

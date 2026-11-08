@@ -38,6 +38,9 @@ paper's numbers exactly, for three reasons:
 3. **The FlamMap landscape and MTT runs are manual.** The pipeline writes the
    landscape rasters, but the landscape file is built by hand in FlamMap and MTT
    is run in the FlamMap interface (see [docs/FLAMMAP.md](docs/FLAMMAP.md)).
+   Note that the canopy rasters are scaled: stand height and canopy base height
+   are in m × 10 and canopy bulk density in kg m⁻³ × 100. Set these units when
+   building the landscape (see the units table in [docs/FLAMMAP.md](docs/FLAMMAP.md)).
 
 The paper's final result rasters are archived separately (see **Results data** below).
 
@@ -102,7 +105,8 @@ python run_pipeline.py --steps treatment export_vri vri_processing vri_to_fvs --
 | 2 | `vri_processing` | VRI_processing.py | minutes |
 | 3 | `vri_to_fvs` | VRI_to_FVS.py | ~1 h |
 | 4 | `fvs_run` | FVS_run.py | ~3 h per treatment flag |
-| 4.1 | `fvs_fire_run` | FVS_fire_run.py | hours |
+| 4.0 | `landscape_fuel` | raster_for_landscape.py (fuel model rasters only, used by `fvs_fire_run`) | minutes |
+| 4.1 | `fvs_fire_run` | FVS_fire_run.py | ~75 min per treatment flag |
 | 5 | `fvs_read` | FVS_read.py | 10–15 min |
 | 5.1 | `fvs_fire_read` | FVS_fire_read.py | 10–15 min |
 | 6 | `landscape` | raster_for_landscape.py (landscape rasters only) | minutes |
@@ -133,12 +137,15 @@ The paper's final result rasters and summary tables (burn-probability ratios,
 emission rasters, carbon-stock rasters, carbon savings) are archived on Zenodo
 under CC-BY 4.0: **https://doi.org/10.5281/zenodo.23985361**. They contain no
 treatment polygons. Access is restricted: request it on the Zenodo record.
+These archived results were produced with v1.0.0 of the code. A revised version
+produced with v1.1.0 will follow (see [CHANGELOG.md](CHANGELOG.md)).
 
 
 ## Known issues and notes for reviewers
 
-The code reproduces the paper's calculations unchanged. The items below are
-documented so that users can judge them, not silently "fixed":
+Version 1.1.0 corrects several unit and logic errors found after the paper was
+first submitted; each correction is listed in [CHANGELOG.md](CHANGELOG.md).
+The items below are documented so that users can judge them:
 
 - **Random tree lists.** `VRI_to_FVS.py` draws tree heights and diameters at
   random. The paper's runs were unseeded. Set `fvs.random_seed` for repeatable runs.

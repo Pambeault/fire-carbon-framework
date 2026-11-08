@@ -2,6 +2,7 @@ import sqlite3
 import math
 import glob
 import pandas as pd
+import numpy as np
 import os
 import subprocess
 import sys
@@ -89,11 +90,53 @@ def remove_inf_db(directory, database):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# FLAMMAP FUEL MODEL PER STAND (used with FUELMODL in the wildfire year)
+# ─────────────────────────────────────────────────────────────────────────────
+
+NON_BURNABLE = (91, 92, 93, 98, 99)
+
+
+def stand_fuel_models(fuel_tif, vri_fc, gdb, id_field="POLYGON_ID"):
+    """
+    Majority fuel model of each stand in a FlamMap fuel-model raster.
+    Returns {stand id (str): fuel model (int)}.
+
+    FFE's own fuel model selection does not recognise BC habitat types and falls
+    back to fuel model 8 for most stands; FUELMODL makes the FVS wildfire use the
+    same Scott & Burgan models as the FlamMap landscape instead.
+    """
+    import arcpy
+    if not os.path.exists(fuel_tif):
+        raise FileNotFoundError(f"Fuel model raster not found: {fuel_tif}")
+    arcpy.env.workspace = gdb
+    arcpy.env.overwriteOutput = True
+    ras = arcpy.Raster(fuel_tif)
+    tmp = r"memory\stand_id_fm"
+    with arcpy.EnvManager(snapRaster=ras, extent=ras.extent, cellSize=ras.meanCellWidth,
+                          outputCoordinateSystem=ras.spatialReference):
+        arcpy.conversion.PolygonToRaster(vri_fc, id_field, tmp, "CELL_CENTER",
+                                         cellsize=ras.meanCellWidth)
+        ids = arcpy.RasterToNumPyArray(tmp, nodata_to_value=-1).astype(np.int64)
+    arcpy.management.Delete(tmp)
+    fm = arcpy.RasterToNumPyArray(ras, nodata_to_value=255).astype(np.int64)
+    if ids.shape != fm.shape:
+        raise RuntimeError(f"Stand raster {ids.shape} and fuel raster {fm.shape} do not align")
+
+    df = pd.DataFrame({"sid": ids.ravel(), "fm": fm.ravel()})
+    df = df[(df.sid >= 0) & (df.fm != 255)]
+    top = (df.groupby(["sid", "fm"]).size().reset_index(name="n")
+             .sort_values(["sid", "n"], ascending=[True, False])
+             .drop_duplicates("sid"))
+    print(f"  • FlamMap fuel model found for {len(top)} stands")
+    return {str(s): int(f) for s, f in zip(top.sid, top.fm)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # KEYWORD BUILDERS
 # ─────────────────────────────────────────────────────────────────────────────
 
 def build_keywords(db_name, db_index, stand_ids, df_treat, switch_treatment,
-                   mortality_skip_stands=None, fcfg=None):
+                   mortality_skip_stands=None, fcfg=None, fuel_models=None):
     if mortality_skip_stands is None:
         mortality_skip_stands = set()
 
@@ -112,7 +155,8 @@ def build_keywords(db_name, db_index, stand_ids, df_treat, switch_treatment,
 
         key_lines.append(
             write_key(db_name, sid, db_index, switch_treatment, pct_treat,
-                      mortality_skip_stands, fcfg)
+                      mortality_skip_stands, fcfg,
+                      fuel_model=(fuel_models or {}).get(sid_str))
         )
 
     key_lines.append("\nSTOP\n")
@@ -120,7 +164,7 @@ def build_keywords(db_name, db_index, stand_ids, df_treat, switch_treatment,
 
 
 def write_key(db_name, sid, file_num, switch_treatment, pct_treat,
-              mortality_skip_stands=None, fcfg=None):
+              mortality_skip_stands=None, fcfg=None, fuel_model=None):
     """
     Build the complete keyword block for a single stand.
 
@@ -138,6 +182,7 @@ def write_key(db_name, sid, file_num, switch_treatment, pct_treat,
         mortality_skip_stands = set()
 
     wf = fcfg["wildfire"]   # config: fvs.wildfire
+    pb = fcfg["prescribed_burn"]   # config: fvs.prescribed_burn (same burn as FVS_run.py)
     # Mortality flag: 0 if stand is in skip list, 1 otherwise
     mort = 0 if str(sid) in mortality_skip_stands else 1
     if mort == 0:
@@ -176,9 +221,13 @@ def write_key(db_name, sid, file_num, switch_treatment, pct_treat,
             "STRCLASS",
             "FMIn",
             "!Exten:fire Title:Prescribed burn in spring + severe fire in summer",
+            # Prescribed burn identical to FVS_run.py. It is a year before the wildfire
+            # because FFE simulates only one fire per year (with both in 2025 the burn was lost).
+            kw("SimFire", pb["year"], pb["wind_kmh"], pb["moisture_code"], pb["temperature_c"],
+               pb["mortality"], pct_treat, pb["season"]),
+            kw("FlameAdj", pb["year"], float(pb["flame_adjust"])),  # flame adjust for the prescribed burn only
             kw("SimFire", wf["year"], wf["wind_kmh"], wf["moisture_code"], wf["temperature_c"],
                mort if wf["mortality"] else 0, wf["percent_area"], wf["season"]),  # megafire: mort conditional
-            kw("flameadj", wf["year"], float(fcfg["flame_adjust_treated"])),  # flame adjust for areas that have seen IFS
         ]
     else:
         fire_lines = [
@@ -188,6 +237,12 @@ def write_key(db_name, sid, file_num, switch_treatment, pct_treat,
             kw("SimFire", wf["year"], wf["wind_kmh"], wf["moisture_code"], wf["temperature_c"],
                mort if wf["mortality"] else 0, wf["percent_area"], wf["season"]),
         ]
+
+    # Wildfire burns with the stand's FlamMap fuel model (FUELMODL needs a
+    # second line: fields 8-9 or blank). From the wildfire year on; the
+    # prescribed burn keeps FFE's own choice.
+    if fuel_model is not None and fuel_model not in NON_BURNABLE:
+        fire_lines += [kw("FuelModl", wf["year"], int(fuel_model), 1), ""]
 
     fire_lines += [
         kw("CARBCALC", 0, 1),
@@ -267,10 +322,11 @@ def call_fvs(path_dir, db_name, db_index, switch_treatment, exe_path, timeout=No
 # MAIN
 # ─────────────────────────────────────────────────────────────────────────────
 
-def main(cfg, year, switch_treatment):
+def main(cfg, year, switch_treatment, chunks=None):
     """
     Iterate over all FVS_in_**.db files in path_dir,
     generate one keyword file per DB, and call FVS.
+    chunks: optional list of chunk numbers (e.g. [1, 3, 6]) to re-run only those.
     """
     fcfg = cfg["fvs"]
     path_dir = cfg.path("fvs_dir", year=year)
@@ -279,8 +335,21 @@ def main(cfg, year, switch_treatment):
     db_files = glob.glob(os.path.join(path_dir, "FVS_in_**.db"))
     if not db_files:
         raise FileNotFoundError(f"No .db files found in {path_dir}")
+    if chunks is not None:
+        wanted = {f"{int(c):02d}" for c in chunks}
+        db_files = [p for p in db_files
+                    if os.path.splitext(os.path.basename(p))[0][-2:] in wanted]
 
     print(f"Found {len(db_files)} database(s).")
+
+    # Fuel model for the wildfire: "landscape" = each stand's FlamMap fuel model
+    # (needs the step-6 fuel model rasters, step `landscape_fuel`); "ffe" = FFE's own choice.
+    fuel_models = None
+    if fcfg.get("wildfire_fuel_model", "ffe") == "landscape":
+        fuel_tif = os.path.join(cfg.path("landscape_dir", year=year),
+                                f"fuel_model_{cfg['landscape']['fuel_assumption']}_{switch_treatment}.tif")
+        fuel_models = stand_fuel_models(fuel_tif, cfg.layer("vri", year), cfg.path("gdb"),
+                                        cfg["gis"]["fields"]["polygon_id"])
 
     for db_path in db_files:
         db_name  = os.path.splitext(os.path.basename(db_path))[0]
@@ -302,7 +371,7 @@ def main(cfg, year, switch_treatment):
         key_text = build_keywords(
             db_name, db_index, stand_ids, df_treatment, switch_treatment,
             mortality_skip_stands={str(s) for s in fcfg["mortality_skip_stands"]},
-            fcfg=fcfg
+            fcfg=fcfg, fuel_models=fuel_models
         )
 
         key_file = os.path.join(

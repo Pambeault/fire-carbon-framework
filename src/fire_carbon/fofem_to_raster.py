@@ -24,7 +24,11 @@ def co2eq(df, ecfg):
                    (df["COF"] + df["COS"])/2000 * GWP_CO +
                    (df["PM25F"] + df["PM25S"])/2000 * GWP_PM25) +
                    (df["FlaCon"] + df["SmoCon"]) * GWP_NMVOC * (ecfg["nmvoc_ef"]/1000) +
-                   (df["FlaCon"] + df["SmoCon"]) * GWP_N2O * (ecfg["n2o_ef"]/1000000))
+                   # N2O emission factor 0.16 g N2O per kg fuel consumed (Akagi et al., 2011,
+                   # Atmos. Chem. Phys. 11, 4039-4072, doi:10.5194/acp-11-4039-2011).
+                   # FlaCon + SmoCon are tons/acre, and g/kg = kg/t, so EF / 1000 gives tons N2O/acre.
+                   # (REM Eq. 6.3 writes 0.16/10^6 for fuel mass in kg.)
+                   (df["FlaCon"] + df["SmoCon"]) * GWP_N2O * (ecfg["n2o_ef"]/1000))
 
     return df
 
@@ -78,7 +82,8 @@ def vri_poly_match(cfg, df_year, year, switch_treatment, res):
 
     ## 3.5 - Polygon -> Raster (density, tons CO2e/acre) kept in memory only
     arcpy.env.outputCoordinateSystem = target_crs
-    raster_density_mem = r"in_memory\emission_density"
+    # one name per flag: both flags can run in the same Python session
+    raster_density_mem = rf"in_memory\emission_density_{switch_treatment}"
 
     arcpy.conversion.PolygonToRaster(
         in_features=vri_poly,
@@ -103,6 +108,7 @@ def vri_poly_match(cfg, df_year, year, switch_treatment, res):
 
     ## 3.7 - Cleanup
     arcpy.management.RemoveJoin(vri_poly)
+    del raster_per_pixel, raster_density  # release the in-memory raster so it can be deleted
     arcpy.management.Delete(raster_density_mem)
 
     print(f"Per-pixel raster written to: {raster_out}")

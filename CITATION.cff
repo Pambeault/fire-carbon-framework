@@ -1,7 +1,7 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite both the software and the paper below."
 title: "Fire-carbon framework"
-version: 1.0.0
+version: 1.1.0
 license: MIT
 type: software
 authors:
@@ -11,7 +11,7 @@ authors:
   # PLACEHOLDER: add co-authors here
 doi: 10.5281/zenodo.23984891          # Zenodo concept DOI (all versions)
 repository-code: "https://github.com/Pambeault/fire-carbon-framework"
-date-released: "2026-11-03"          # PLACEHOLDER: update on release
+date-released: "2026-11-08"          # PLACEHOLDER: update on release
 preferred-citation:
   type: article
   title: "[PLACEHOLDER: PAPER TITLE]"

@@ -76,6 +76,7 @@ def write_key(db_name, id, file_num, switch_treatment, pct_treat, fcfg):
     pb = fcfg["prescribed_burn"]
     pb_year, pb_wind, pb_moist = pb["year"], pb["wind_kmh"], pb["moisture_code"]
     pb_temp, pb_mort, pb_season = pb["temperature_c"], pb["mortality"], pb["season"]
+    pb_flame = pb["flame_adjust"]
     # Define content variables for each section of the keyword file
     key_init = f'''STDIDENT
 {id}
@@ -107,7 +108,8 @@ NumCycle     {n_cycles}
 STRCLASS
 FMIn
 !Exten:fire Title:Prescribed burn
-SimFire   {pb_year:>10}{pb_wind:>10}{pb_moist:>10}{pb_temp:>10}{pb_mort:>10}        {pct_treat}{pb_season:>10}
+SimFire   {pb_year:>10}{pb_wind:>10}{pb_moist:>10}{pb_temp:>10}{pb_mort:>10}{pct_treat:>10}{pb_season:>10}
+Flameadj  {pb_year:>10}{pb_flame:>10}
 CARBREPT        2
 CARBCALC        0        1       0
 FUELOUT         0
